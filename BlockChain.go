@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 type Header struct {
@@ -22,7 +24,7 @@ type Block struct {
 	Value  string
 }
 
-func initial(height int32, parentHash string, value string) *Block {
+func Initial(height int32, parentHash string, value string) *Block {
 	header := Header{Height: height, Timestamp: time.Now().Unix(), ParentHash: parentHash, Size: 32}
 	b := Block{Header: header, Value: value}
 	h := sha256.New()
@@ -109,41 +111,43 @@ func (bc *Blockchain) PrintChain() {
 	}
 	sort.Slice(Keys, func(i, j int) bool { return Keys[i] < Keys[j] })
 	for k := range Keys {
-		fmt.Println("Height: ", k+1, " Blocks: ", bc.Chain[int32(k+1)])
+		//fmt.Println("Height: ", k+1, " Blocks: ", bc.Chain[int32(k+1)])
+		spew.Dump(bc.Chain[int32(k+1)])
 	}
 }
 
 func main() {
 	//  b := initial(1,"aq3r3r32rer232a","33345")
 	//b1 := initial(2,"werweer232werf","12976")
-	b3 := initial(3, "afsdfdsfsdaa2f", "18964")
-	b4 := initial(4, "sewr4twsdfdsff", "89064")
-	b5 := initial(4, "ar3qrqrfdsfccd", "33567")
-	b6 := initial(5, "45tvefwefwtrtr", "26795")
-	b7 := initial(6, "343frwgrgregw3", "97313")
-	b8 := initial(7, "mbnotuwh4tg47g", "30783")
+	b3 := Initial(3, "afsdfdsfsdaa2f", "18964")
+	b4 := Initial(4, "sewr4twsdfdsff", "89064")
+	b5 := Initial(4, "ar3qrqrfdsfccd", "33567")
+	b6 := Initial(5, "45tvefwefwtrtr", "26795")
+	b7 := Initial(6, "343frwgrgregw3", "97313")
+	b8 := Initial(7, "mbnotuwh4tg47g", "30783")
 	//b.print()
 	//fmt.Println(b.EncodeToJson())
 	//  b2 := DecodeBlockFromJson(b.EncodeToJson())
 	//b2.print()
 	m := make(map[int32][]Block)
-	m[1] = append(m[1], *initial(1, "aq3r3r32rer232", "33443"))
-	m[2] = append(m[2], *initial(2, "3sgrer85yeff32", "87844"))
-	m[3] = append(m[3], *initial(3, "wegq3r3rdgsgr232", "45443"))
-	m[2] = append(m[2], *initial(2, "bfgny32rer232", "90441"))
+	m[1] = append(m[1], *Initial(1, "aq3r3r32rer232", "33443"))
+	m[2] = append(m[2], *Initial(2, "3sgrer85yeff32", "87844"))
+	m[3] = append(m[3], *Initial(3, "wegq3r3rdgsgr232", "45443"))
+	m[2] = append(m[2], *Initial(2, "bfgny32rer232", "90441"))
 	//Chain := Blockchain{Chain: m, Length: 4}
 	blockchain := Blockchain{}
-	blockchain.Insert(*initial(1, "aq3r3r32rer232a", "33345"))
-	blockchain.Insert(*initial(2, "werweer232werf", "12976"))
+	blockchain.Insert(*Initial(1, "aq3r3r32rer232a", "33345"))
+	blockchain.Insert(*Initial(2, "werweer232werf", "12976"))
 	blockchain.Insert(*b3)
 	blockchain.Insert(*b4)
 	blockchain.Insert(*b5)
 	blockchain.Insert(*b6)
 	blockchain.Insert(*b7)
 	blockchain.Insert(*b8)
-	//blockchain.PrintChain()
+	blockchain.PrintChain()
 	//Chain2 := DecodeBlockchainFromJson(Chain.EncodeToJson())
 	//fmt.Println(Chain2)
-	fmt.Println(blockchain.EncodeToJson())
-	fmt.Println(len(blockchain.EncodeToJson()))
+	//fmt.Println(blockchain.EncodeToJson())
+	//fmt.Println(len(blockchain.EncodeToJson()))
+	//spew.Dump(blockchain)
 }
