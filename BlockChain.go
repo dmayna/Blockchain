@@ -156,6 +156,51 @@ func (bc *Blockchain) PrintChain() {
 	}
 }
 
+func (bc *Blockchain) GetLatestBlocks() []Block {
+	return bc.Get(bc.Length)
+}
+
+func (bc *Blockchain) GetParentBlock(block Block) *Block {
+	//potentialParentBlocks := bc.Get(block.Header.Height - 1)
+	for i := range bc.Get(block.Header.Height - 1) {
+		if bc.Chain[block.Header.Height-1][i].Header.Hash == block.Header.ParentHash {
+			return &bc.Chain[block.Header.Height-1][i]
+		}
+	}
+	return &Block{}
+}
+
+// file handlers
+func StartTryingNonces() {
+	for {
+		blockchain.GetLatestBlocks()
+	}
+}
+
+// data structures
+
+type HeartBeatData struct {
+	Id          string // sender id
+	Addr        string // senders addr
+	BlocksJson  string
+	PeerMapJson string
+}
+
+type PeerList struct {
+	SelfId  string
+	PeerIds []string
+	Length  int
+}
+
+type RegisterData struct {
+	AssignedId  string
+	PeerMapJson string
+}
+
+type SyncBlockChain struct {
+	Bc Blockchain
+}
+
 // FOR SERVER
 func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	bytes, err := json.MarshalIndent(blockchain, "", "  ")
