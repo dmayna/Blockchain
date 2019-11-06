@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"sort"
 	"time"
@@ -23,6 +25,7 @@ type Header struct {
 	Hash       string
 	ParentHash string
 	Size       int32
+	Nonce      string
 }
 
 type Block struct {
@@ -87,11 +90,25 @@ func InitBlockchain() *Blockchain {
 }
 
 func (bc *Blockchain) Insert(block Block) {
+	//verify Nonce
+	h := sha256.New()
+	hash := block.Header.ParentHash + block.Header.Nonce + block.Header.Hash
+	h.Write([]byte(hash))
+	pow_answer := hex.EncodeToString(h.Sum(nil))
+	runes := []rune(pow_answer)
+	for i := 0; i <= Difficulty; i++ {
+		if string(runes[i]) != "0" {
+			fmt.Printf("Rune %v is '%c'\n", i, runes[i])
+			return
+		}
+	}
+	// we dont store duplicate blocks
 	for b := range bc.Chain[block.Header.Height] {
 		if bc.Chain[block.Header.Height][b].Header.Hash == block.Header.Hash {
 			return
 		}
 	}
+	// checking if parentHash matches blockchain
 	for b := range bc.Chain[block.Header.Height-1] {
 		if bc.Chain[block.Header.Height-1][b].Header.Hash == block.Header.ParentHash {
 			bc.Chain[block.Header.Height] = append(bc.Chain[block.Header.Height], block)
@@ -105,23 +122,25 @@ func (bc *Blockchain) Insert(block Block) {
 	}
 }
 
+type BlocksJson []string
+
 func (bc *Blockchain) EncodeToJson() []string {
+
 	blocksJson := []string{}
 	for k, _ := range bc.Chain {
 		for block := range bc.Chain[k] {
-			//fmt.Println(bc.Chain[k][block])
 			blocksJson = append(blocksJson, bc.Chain[k][block].EncodeToJson())
 		}
 	}
 	return blocksJson
 }
 
-func DecodeBlockchainFromJson(inData string) *Blockchain {
+func DecodeBlockchainFromJson(inData []string) *Blockchain {
 	var b Blockchain
-	err := json.Unmarshal([]byte(inData), &b)
-	if err != nil {
-		panic(err)
+	for block := range inData {
+		b.Insert(*DecodeBlockFromJson(inData[block]))
 	}
+
 	return &b
 }
 
@@ -147,17 +166,14 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(bytes))
 }
 
-func commonMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
-	})
+func handlePeers(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "Todo Index!")
 }
 
 func run() error {
 	r := mux.NewRouter()
-	r.Use(commonMiddleware)
 	r.HandleFunc("/", handleGetBlockchain).Methods("GET")
+	r.HandleFunc("/peer", handlePeers)
 
 	httpAddr := flag.String("http", "8080", "http listen address")
 	log.Println("Listening on ", *httpAddr)
@@ -191,10 +207,16 @@ func NewProof(b *Block) *ProofOfWork {
 	return pow
 }
 
+type Node struct {
+	PeerList []string
+}
+
 var blockchain = InitBlockchain()
 
 func main() {
 	go func() {
+		// You can see blockchain in the terminal or in browser (easiest)
+		// at http://localhost:8080/
 		b3 := Initial(3, "816da3c677f40fce32377aa69f1f488ea7787f0a1f11bb024ee4d246b68f6bd4adb8fbf32e51745e83d47566d40e6c6274be1a6cd79a88269c1e541191d54822", "18964")
 		b4 := Initial(4, "d97e47faaf24e025c133ae913d231403b84996616230113777fd46b9311e815134e2d76eb148b6e0541e0692e44bf7addd4320c58e6bfe15895b5bbbdaf4d33e", "89064")
 		b5 := Initial(4, "d97e47faaf24e025c133ae913d231403b84996616230113777fd46b9311e815134e2d76eb148b6e0541e0692e44bf7addd4320c58e6bfe15895b5bbbdaf4d33e", "33567")
@@ -210,13 +232,34 @@ func main() {
 		blockchain.Insert(*b6)
 		blockchain.Insert(*b7)
 		blockchain.Insert(*b8)
+		blockchain.Insert(*Initial(11, "c2e4f5eebed86504fbb982f9f2f876386cea9e73d84a989930824172cb8967b5b6c93f00487c0b303418ab95ad67b3c8d3972ddbd86f5227deb47e98a4912c25", "97313"))
 		blockchain.PrintChain()
-		//Chain2 := DecodeBlockchainFromJson(Chain.EncodeToJson())
-		//fmt.Println(Chain2)
+		fmt.Println(DecodeBlockFromJson(b3.EncodeToJson()))
+		fmt.Println(blockchain.EncodeToJson())
+		Chain2 := DecodeBlockchainFromJson(blockchain.EncodeToJson())
+		fmt.Println(Chain2)
 		//fmt.Println(blockchain.EncodeToJson())
 		//fmt.Println(len(blockchain.EncodeToJson()))
-		//spew.Dump(blockchain)
+		//spew.Dump(blockchain.EncodeToJson())
 	}()
-
-	log.Fatal(run())
+	ifaces, _ := net.Interfaces()
+	// handle err
+	for _, i := range ifaces {
+		addrs, _ := i.Addrs()
+		// handle err
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+				fmt.Println(ip)
+			case *net.IPAddr:
+				ip = v.IP
+				fmt.Println(ip)
+			}
+			// process IP address
+			fmt.Println(ip)
+			log.Fatal(run())
+		}
+	}
 }
