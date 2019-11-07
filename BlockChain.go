@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -34,7 +36,7 @@ type Block struct {
 }
 
 func Initial(height int32, parentHash string, value string) *Block {
-	header := Header{Height: height, Timestamp: time.Now().Unix(), ParentHash: parentHash, Size: 32}
+	header := Header{Height: height, Timestamp: time.Now().Unix(), ParentHash: parentHash, Size: 32, Nonce: ""}
 	b := Block{Header: header, Value: value}
 	h := sha512.New()
 	hash := string(b.Header.Height) + string(b.Header.Timestamp) + b.Header.ParentHash + string(b.Header.Size) + b.Value
@@ -86,12 +88,13 @@ func InitBlockchain() *Blockchain {
 	bc := Blockchain{}
 	bc.Chain = make(map[int32][]Block)
 	bc.Chain[1] = append(bc.Chain[1], *GenesisBlock())
+	bc.Length = 1
 	return &bc
 }
 
 func (bc *Blockchain) Insert(block Block) {
 	//verify Nonce
-	h := sha256.New()
+	/*h := sha256.New()
 	hash := block.Header.ParentHash + block.Header.Nonce + block.Header.Hash
 	h.Write([]byte(hash))
 	pow_answer := hex.EncodeToString(h.Sum(nil))
@@ -101,7 +104,7 @@ func (bc *Blockchain) Insert(block Block) {
 			fmt.Printf("Rune %v is '%c'\n", i, runes[i])
 			return
 		}
-	}
+	}*/
 	// we dont store duplicate blocks
 	for b := range bc.Chain[block.Header.Height] {
 		if bc.Chain[block.Header.Height][b].Header.Hash == block.Header.Hash {
@@ -118,6 +121,8 @@ func (bc *Blockchain) Insert(block Block) {
 		} else {
 			// change this to an error later
 			fmt.Println("Parent Hash does not Match")
+			fmt.Println(bc.Chain[block.Header.Height-1][0].Header.Hash)
+			fmt.Println(block.Header.ParentHash)
 		}
 	}
 }
@@ -171,9 +176,80 @@ func (bc *Blockchain) GetParentBlock(block Block) *Block {
 }
 
 // file handlers
+
+func randomHex(n int) (string, error) {
+	bytes := make([]byte, n)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func AskForBlock() {
+
+}
+
 func StartTryingNonces() {
-	for {
-		blockchain.GetLatestBlocks()
+	for i := 0; i < 40; i++ {
+		//	const Difficulty int = 12
+		latestBlock := blockchain.GetLatestBlocks()[0]
+		header := Header{Height: latestBlock.Header.Height + 1, Timestamp: time.Now().Unix(), ParentHash: latestBlock.Header.Hash, Size: 32, Nonce: ""}
+		h := sha512.New()
+		// for random value to start finding nonce
+		hash := string(time.Now().Unix())
+		fmt.Println(hash)
+		h.Write([]byte(hash))
+		nonceAttempt := hex.EncodeToString(h.Sum(nil))
+		// this code takes the first 16 hexes from random hex value
+		runes := []rune(nonceAttempt)
+		// ... Convert back into a string from rune slice.
+		nonceAttempt = string(runes[0:16])
+		fmt.Println(" RUNE SUBSTRING:", nonceAttempt)
+		// check to see if nonce passes difficulty test
+		notFound := true
+		for notFound {
+			fmt.Println(nonceAttempt)
+			h = sha256.New()
+			hash = string(header.ParentHash) + string(nonceAttempt) + "value"
+			h.Write([]byte(hash))
+			hashAttempt := hex.EncodeToString(h.Sum(nil))
+			fmt.Println(hashAttempt)
+			for i, char := range hashAttempt { // change this for hash outout not nonce number itself!!!
+				if string(char) != "0" && i < Difficulty {
+					//nonce fails leave loop, increment nonce and try again
+					fmt.Println("nonce failed")
+					break
+				}
+				if string(char) == "0" && i == Difficulty {
+					// nonce found add new block to blockchain
+					fmt.Println("nonce found------------------------------------")
+
+					header.Nonce = nonceAttempt
+					b := Block{Header: header, Value: "value"} // figure out value
+					h := sha512.New()
+					hash := string(b.Header.Height) + string(b.Header.Timestamp) + b.Header.ParentHash + string(b.Header.Size) + b.Value
+					h.Write([]byte(hash))
+					b.Header.Hash = hex.EncodeToString(h.Sum(nil))
+					//fmt.Println(b.Header.ParentHash)
+					blockchain.Insert(b)
+					notFound = false
+					break
+				}
+			}
+			if notFound == true {
+				// this code is to increment nonce value if wrong
+				fmt.Println("new nonce ")
+				newNonce, _ := strconv.ParseInt(nonceAttempt, 16, 64)
+
+				newNonce += 1
+				if newNonce < 0 {
+					newNonce *= -1
+				}
+
+				nonceAttempt = strconv.FormatInt(newNonce, 16) //string(newNonce)
+				fmt.Println(nonceAttempt)
+			}
+		}
 	}
 }
 
@@ -201,6 +277,30 @@ type SyncBlockChain struct {
 	Bc Blockchain
 }
 
+func (blockchain *Blockchain) Show() string {
+	rs := ""
+	var idList []int
+	for id := range blockchain.Chain {
+		idList = append(idList, int(id))
+	}
+	sort.Ints(idList)
+	for _, id := range idList {
+		var hashs []string
+		for _, block := range blockchain.Chain[int32(id)] {
+			hashs = append(hashs, block.Header.Hash+"<="+block.Header.ParentHash)
+		}
+		sort.Strings(hashs)
+		rs += fmt.Sprintf("%v: ", id)
+		for _, h := range hashs {
+			rs += fmt.Sprintf("%s, ", h)
+		}
+		rs += "\n"
+	}
+	sum := sha256.Sum256([]byte(rs))
+	rs = fmt.Sprintf("This is the BlockChain: %s\n", hex.EncodeToString(sum[:])) + rs
+	return rs
+}
+
 // FOR SERVER
 func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	bytes, err := json.MarshalIndent(blockchain, "", "  ")
@@ -215,11 +315,16 @@ func handlePeers(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Todo Index!")
 }
 
+func handleShow(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, blockchain.Show())
+}
+
 func run() error {
 	r := mux.NewRouter()
 	r.HandleFunc("/", handleGetBlockchain).Methods("GET")
 	r.HandleFunc("/peer", handlePeers)
-
+	r.HandleFunc("/block/{height}/{hash}", handlePeers).Methods("GET")
+	r.HandleFunc("/show", handleShow).Methods("GET")
 	httpAddr := flag.String("http", "8080", "http listen address")
 	log.Println("Listening on ", *httpAddr)
 	s := &http.Server{
@@ -237,7 +342,7 @@ func run() error {
 }
 
 // PROOF OF WORK
-const Difficulty = 12
+const Difficulty = 2
 
 type ProofOfWork struct {
 	Block  *Block
@@ -259,33 +364,38 @@ type Node struct {
 var blockchain = InitBlockchain()
 
 func main() {
-	go func() {
-		// You can see blockchain in the terminal or in browser (easiest)
-		// at http://localhost:8080/
-		b3 := Initial(3, "816da3c677f40fce32377aa69f1f488ea7787f0a1f11bb024ee4d246b68f6bd4adb8fbf32e51745e83d47566d40e6c6274be1a6cd79a88269c1e541191d54822", "18964")
-		b4 := Initial(4, "d97e47faaf24e025c133ae913d231403b84996616230113777fd46b9311e815134e2d76eb148b6e0541e0692e44bf7addd4320c58e6bfe15895b5bbbdaf4d33e", "89064")
-		b5 := Initial(4, "d97e47faaf24e025c133ae913d231403b84996616230113777fd46b9311e815134e2d76eb148b6e0541e0692e44bf7addd4320c58e6bfe15895b5bbbdaf4d33e", "33567")
-		b6 := Initial(5, "2d2eabeff80606d2a458bef8bb8e29a16477e9a2a0c85c77d848a576b776f0c1bcd824f4ac535649014d119f3d16c595a61a44bf6bc45133bcf76682b8cd629a", "26795")
-		b7 := Initial(6, "343frwgrgregw3", "97313")
-		b8 := Initial(7, "mbnotuwh4tg47g", "30783")
+	/*
+		go func() {
+			// You can see blockchain in the terminal or in browser (easiest)
+			// at http://localhost:8080/
+			b3 := Initial(3, "816da3c677f40fce32377aa69f1f488ea7787f0a1f11bb024ee4d246b68f6bd4adb8fbf32e51745e83d47566d40e6c6274be1a6cd79a88269c1e541191d54822", "18964")
+			b4 := Initial(4, "d97e47faaf24e025c133ae913d231403b84996616230113777fd46b9311e815134e2d76eb148b6e0541e0692e44bf7addd4320c58e6bfe15895b5bbbdaf4d33e", "89064")
+			b5 := Initial(4, "d97e47faaf24e025c133ae913d231403b84996616230113777fd46b9311e815134e2d76eb148b6e0541e0692e44bf7addd4320c58e6bfe15895b5bbbdaf4d33e", "33567")
+			b6 := Initial(5, "2d2eabeff80606d2a458bef8bb8e29a16477e9a2a0c85c77d848a576b776f0c1bcd824f4ac535649014d119f3d16c595a61a44bf6bc45133bcf76682b8cd629a", "26795")
+			b7 := Initial(6, "343frwgrgregw3", "97313")
+			b8 := Initial(7, "mbnotuwh4tg47g", "30783")
 
-		blockchain.Insert(*Initial(1, "aq3r3r32rer232a", "33345"))
-		blockchain.Insert(*Initial(2, "bfcb2310fccfda2c6fc35d157694817d94d1fa3066547972555f89ab5d1c66ac5a5757a7659f6fddb45d14d232997ea4718737215a0e3beb5a63cadf4f4a051f", "12976"))
-		blockchain.Insert(*b3)
-		blockchain.Insert(*b4)
-		blockchain.Insert(*b5)
-		blockchain.Insert(*b6)
-		blockchain.Insert(*b7)
-		blockchain.Insert(*b8)
-		blockchain.Insert(*Initial(11, "c2e4f5eebed86504fbb982f9f2f876386cea9e73d84a989930824172cb8967b5b6c93f00487c0b303418ab95ad67b3c8d3972ddbd86f5227deb47e98a4912c25", "97313"))
-		blockchain.PrintChain()
-		fmt.Println(DecodeBlockFromJson(b3.EncodeToJson()))
-		fmt.Println(blockchain.EncodeToJson())
-		Chain2 := DecodeBlockchainFromJson(blockchain.EncodeToJson())
-		fmt.Println(Chain2)
-		//fmt.Println(blockchain.EncodeToJson())
-		//fmt.Println(len(blockchain.EncodeToJson()))
-		//spew.Dump(blockchain.EncodeToJson())
+			blockchain.Insert(*Initial(1, "aq3r3r32rer232a", "33345"))
+			blockchain.Insert(*Initial(2, "bfcb2310fccfda2c6fc35d157694817d94d1fa3066547972555f89ab5d1c66ac5a5757a7659f6fddb45d14d232997ea4718737215a0e3beb5a63cadf4f4a051f", "12976"))
+			blockchain.Insert(*b3)
+			blockchain.Insert(*b4)
+			blockchain.Insert(*b5)
+			blockchain.Insert(*b6)
+			blockchain.Insert(*b7)
+			blockchain.Insert(*b8)
+			blockchain.Insert(*Initial(11, "c2e4f5eebed86504fbb982f9f2f876386cea9e73d84a989930824172cb8967b5b6c93f00487c0b303418ab95ad67b3c8d3972ddbd86f5227deb47e98a4912c25", "97313"))
+			blockchain.PrintChain()
+			fmt.Println(DecodeBlockFromJson(b3.EncodeToJson()))
+			fmt.Println(blockchain.EncodeToJson())
+			Chain2 := DecodeBlockchainFromJson(blockchain.EncodeToJson())
+			fmt.Println(Chain2)
+			//fmt.Println(blockchain.EncodeToJson())
+			//fmt.Println(len(blockchain.EncodeToJson()))
+			//spew.Dump(blockchain.EncodeToJson())
+		}()
+	*/
+	go func() {
+		StartTryingNonces()
 	}()
 	ifaces, _ := net.Interfaces()
 	// handle err
@@ -304,7 +414,8 @@ func main() {
 			}
 			// process IP address
 			fmt.Println(ip)
-			log.Fatal(run())
 		}
 	}
+	fmt.Println(blockchain.GetLatestBlocks())
+	log.Fatal(run())
 }
