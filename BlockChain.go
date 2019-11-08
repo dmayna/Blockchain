@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"net"
@@ -197,27 +198,28 @@ func StartTryingNonces() {
 		h := sha512.New()
 		// for random value to start finding nonce
 		hash := string(time.Now().Unix())
-		fmt.Println(hash)
+		fmt.Println(header.Timestamp)
+		//fmt.Println(hash)
 		h.Write([]byte(hash))
 		nonceAttempt := hex.EncodeToString(h.Sum(nil))
 		// this code takes the first 16 hexes from random hex value
 		runes := []rune(nonceAttempt)
 		// ... Convert back into a string from rune slice.
 		nonceAttempt = string(runes[0:16])
-		fmt.Println(" RUNE SUBSTRING:", nonceAttempt)
+		fmt.Println("----------------------- RUNE SUBSTRING:", nonceAttempt)
 		// check to see if nonce passes difficulty test
 		notFound := true
 		for notFound {
-			fmt.Println(nonceAttempt)
+			//fmt.Println(nonceAttempt)
 			h = sha256.New()
 			hash = string(header.ParentHash) + string(nonceAttempt) + "value"
 			h.Write([]byte(hash))
 			hashAttempt := hex.EncodeToString(h.Sum(nil))
-			fmt.Println(hashAttempt)
+			//fmt.Println(hashAttempt)
 			for i, char := range hashAttempt { // change this for hash outout not nonce number itself!!!
 				if string(char) != "0" && i < Difficulty {
 					//nonce fails leave loop, increment nonce and try again
-					fmt.Println("nonce failed")
+					//fmt.Println("nonce failed")
 					break
 				}
 				if string(char) == "0" && i == Difficulty {
@@ -238,7 +240,7 @@ func StartTryingNonces() {
 			}
 			if notFound == true {
 				// this code is to increment nonce value if wrong
-				fmt.Println("new nonce ")
+				//fmt.Println("new nonce ")
 				newNonce, _ := strconv.ParseInt(nonceAttempt, 16, 64)
 
 				newNonce += 1
@@ -247,7 +249,7 @@ func StartTryingNonces() {
 				}
 
 				nonceAttempt = strconv.FormatInt(newNonce, 16) //string(newNonce)
-				fmt.Println(nonceAttempt)
+				//fmt.Println(nonceAttempt)
 			}
 		}
 	}
@@ -315,16 +317,84 @@ func handlePeers(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Todo Index!")
 }
 
+func handleUpload(w http.ResponseWriter, r *http.Request) {
+	if err := json.NewEncoder(w).Encode(blockchain); err != nil {
+		panic(err)
+	}
+}
+
+func handleBlocks(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	blockHeight := vars["height"]
+	blockHash := vars["hash"]
+	height, err := strconv.ParseInt(blockHeight, 10, 32)
+	//hash, err := strconv.Atoi(blockHash)
+	var b = Block{}
+	for i := range blockchain.Chain[int32(height)] {
+		if blockchain.Chain[int32(height)][i].Header.Hash == blockHash {
+			b = blockchain.Chain[int32(height)][i]
+		}
+	}
+	if b == (Block{}) {
+		w.WriteHeader(204)
+	} else if err != nil {
+		w.WriteHeader(500)
+	} else {
+		fmt.Fprintln(w, "Block: ", b)
+	}
+}
+
+/*
+If you have the block, return the JSON string of the specific block;
+if you don't have the block, return HTTP 204: StatusNoContent;
+if there's an error, return HTTP 500: InternalServerError.
+*/
+
 func handleShow(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, blockchain.Show())
+}
+
+func handleHeartbeatReceive(w http.ResponseWriter, r *http.Request) {
+	var block Block
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
+	if err != nil {
+		panic(err)
+	}
+	if err := r.Body.Close(); err != nil {
+		panic(err)
+	}
+	if err := json.Unmarshal(body, &block); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		w.WriteHeader(422) // unprocessable entity
+		if err := json.NewEncoder(w).Encode(err); err != nil {
+			panic(err)
+		}
+	}
+
+	blockchain.Insert(block)
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(block); err != nil {
+		panic(err)
+	}
+}
+
+func handleStart(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		StartTryingNonces()
+		fmt.Fprintln(w, blockchain.Show())
+	}()
 }
 
 func run() error {
 	r := mux.NewRouter()
 	r.HandleFunc("/", handleGetBlockchain).Methods("GET")
 	r.HandleFunc("/peer", handlePeers)
-	r.HandleFunc("/block/{height}/{hash}", handlePeers).Methods("GET")
+	r.HandleFunc("/block/{height}/{hash}", handleBlocks).Methods("GET")
 	r.HandleFunc("/show", handleShow).Methods("GET")
+	r.HandleFunc("/upload", handleUpload).Methods("GET")
+	r.HandleFunc("/heartbeat/receive", handleHeartbeatReceive).Methods("POST")
+	r.HandleFunc("/start", handleStart).Methods("GET") // not sure if actualy GET method
 	httpAddr := flag.String("http", "8080", "http listen address")
 	log.Println("Listening on ", *httpAddr)
 	s := &http.Server{
@@ -394,9 +464,9 @@ func main() {
 			//spew.Dump(blockchain.EncodeToJson())
 		}()
 	*/
-	go func() {
-		StartTryingNonces()
-	}()
+	//	go func() {
+	//	StartTryingNonces()
+	//}()
 	ifaces, _ := net.Interfaces()
 	// handle err
 	for _, i := range ifaces {
