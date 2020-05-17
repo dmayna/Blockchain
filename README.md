@@ -1,4 +1,4 @@
-# Blockchain
+# Blockchain (PoW)
 Private Blockchain made in golang
 
 Using this blockchain is simple. Run the program and the server will star on port 8080 on localhost or you can send in the port you would like as an argument.
